@@ -75,7 +75,7 @@ float adjust_temp = 0;
 float adjust_humid = 0;
 float adjust_pm25 = 0;
 const long offsetTime = 25200;       // หน่วยเป็นวินาที จะได้ 7*60*60 = 25200
-String LINE_TOKEN1,LINE_TOKEN2,LINE_TOKEN3;
+String LINE_TOKEN1,LINE_TOKEN2,UNIT;
 String sheet_api = ""; //"https://script.google.com/macros/s/AKfycbx1nHCA01C2U0NdpsnPdO0Oc5xEjLgfOZWIOwu1f0DX72OGHOHHBRdRqwZyNO-EENF1xg/exec?action=addData";
 String url1 = "https://raw.githubusercontent.com/phawitb/HT-Army2024/main/config.txt";
 String url2 = "https://raw.githubusercontent.com/phawitb/HT-Army2024/main/config_googlesheetAPi.txt";
@@ -137,13 +137,13 @@ void splitString2(String data) {
   adjust_pm25 = stringToFloat(parts[3]);
   LINE_TOKEN1 = parts[4];
   LINE_TOKEN2 = parts[5];
-  LINE_TOKEN3 = parts[6];
+  UNIT = parts[6];
   Serial.print("adjust_temp"); Serial.println(adjust_temp);
   Serial.print("adjust_humid"); Serial.println(adjust_humid);
   Serial.print("adjust_pm25"); Serial.println(adjust_pm25);
   Serial.print("LINE_TOKEN1"); Serial.println(LINE_TOKEN1);
   Serial.print("LINE_TOKEN2"); Serial.println(LINE_TOKEN2);
-  Serial.print("LINE_TOKEN3"); Serial.println(LINE_TOKEN3);
+  Serial.print("UNIT"); Serial.println(UNIT);
 
 }
 
@@ -440,25 +440,27 @@ void loop(){
   Serial.println(adjust_temp);
   Serial.print("adjust_humid");
   Serial.println(adjust_humid);
-  
-  //find status
+    
   if(WiFi.status() == WL_CONNECTED){
+    
     status = "online";
-  }
-  else{
-    status = "offline";
-  }
-  
-  if(WiFi.status() == WL_CONNECTED){
     timeClient.update();
     Serial.print("timeClient.getMinutes()"); Serial.println(timeClient.getMinutes());
     if(SEND_LINE==false && timeClient.getMinutes()==0){
+
+      String msg = UNIT + "\n";
+      msg += "●Flag: " + flag + "\n";
+      msg += "●Temp: " + String(temp) + "°C\n";
+      msg += "●Humidity: " + String(humid) + "%\n";
+      msg += "●Train/Rest: " + String(train) + "/" + String(rest) + " min.\n";
+      msg += "●Water: " + String(water) + " L/hr\n";
+            
       LINE.setToken(LINE_TOKEN1);
-      LINE.notify("อุณหภูมิ เกินกำหนด1");
+      LINE.notify(msg);
       LINE.setToken(LINE_TOKEN2);
-      LINE.notify("อุณหภูมิ เกินกำหนด2");
-      LINE.setToken(LINE_TOKEN3);
-      LINE.notify("อุณหภูมิ เกินกำหนด3");
+      LINE.notify(msg);
+      LINE.setToken(UNIT);
+      
       SEND_LINE = true;
 
     }
@@ -476,6 +478,9 @@ void loop(){
 
     }
   }
+  else{
+    status = "offline";
+  }
 
   //update screen
   updateScreen(flag,temp,humid,status,bat_percentage);
@@ -484,4 +489,3 @@ void loop(){
   delay(5000);
 
 }
-
