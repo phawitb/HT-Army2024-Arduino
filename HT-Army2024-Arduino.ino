@@ -442,7 +442,7 @@ void loop(){
   Serial.println(adjust_humid);
     
   if(WiFi.status() == WL_CONNECTED){
-    
+
     status = "online";
     timeClient.update();
     Serial.print("timeClient.getMinutes()"); Serial.println(timeClient.getMinutes());
@@ -452,6 +452,7 @@ void loop(){
       msg += "●Flag: " + flag + "\n";
       msg += "●Temp: " + String(temp) + "°C\n";
       msg += "●Humidity: " + String(humid) + "%\n";
+      msg += "Heat index: " + String(hic) + "°C\n";
       msg += "●Train/Rest: " + String(train) + "/" + String(rest) + " min.\n";
       msg += "●Water: " + String(water) + " L/hr\n";
             
