@@ -475,7 +475,7 @@ void loop(){
     }
     if(timeClient.getMinutes()%10!=0){
       SEND_LINE = false;
-      SEND_LINE = false;
+      SEND_DATA = false;
 
     }
   }
