@@ -24,8 +24,9 @@ GND <---> GND
 #include <WiFiClientSecureBearSSL.h>
 #include <NTPClient.h>
 #include <TridentTD_LineNotify.h>
+#include <ArduinoJson.h>
 
-String DEVICE_ID = "S003";  //edit=====================================
+String DEVICE_ID = "S004";  //edit=====================================
 #define SCREEN_VERSION 1 //edit=====================================
 
 #define TFT_CS         D2   //14
@@ -50,23 +51,6 @@ String DEVICE_ID = "S003";  //edit=====================================
   #define ST77XX_MAGENTA 0xF81F
 #endif
 
-// if(SCREEN_VERSION==1){
-//   #define ST77XX_B 0X04FF
-//   #define ST77XX_M 0XF81F
-//   #define ST77XX_CYAN 0X07FF
-// }
-// else if(SCREEN_VERSION==2){
-//   #define ST77XX_B 0X04FF
-//   #define ST77XX_M 0x07E0  //0XF81F
-//   #define ST77XX_BLACK 0xFFFF//0x0000
-//   #define ST77XX_RED 0xFFE0//0x001F
-//   #define ST77XX_GREEN 0xF81F //0x07E0
-//   #define ST77XX_WHITE 0x0000//0xFFFF
-//   #define ST77XX_BLUE 0xF800
-//   #define ST77XX_CYAN 0x07FF
-//   #define ST77XX_MAGENTA 0xF81F
-// }
-
 bool firsttime = true;
 float humid,temp,hic,water,pm25;
 int train,rest,timestamp;
@@ -75,18 +59,21 @@ float adjust_temp = 0;
 float adjust_humid = 0;
 float adjust_pm25 = 0;
 const long offsetTime = 25200;       // หน่วยเป็นวินาที จะได้ 7*60*60 = 25200
-String LINE_TOKEN1,LINE_TOKEN2,UNIT;
+String LINE_TOKEN1,LINE_TOKEN2,LINE_TOKEN3,UNIT;
 String sheet_api = ""; //"https://script.google.com/macros/s/AKfycbx1nHCA01C2U0NdpsnPdO0Oc5xEjLgfOZWIOwu1f0DX72OGHOHHBRdRqwZyNO-EENF1xg/exec?action=addData";
-String url1 = "https://raw.githubusercontent.com/phawitb/HT-Army2024/main/config.txt";
+// String url1 = "https://raw.githubusercontent.com/phawitb/HT-Army2024/main/config.txt";
+String url1 = "https://script.google.com/macros/s/AKfycbx1nHCA01C2U0NdpsnPdO0Oc5xEjLgfOZWIOwu1f0DX72OGHOHHBRdRqwZyNO-EENF1xg/exec?id=" + DEVICE_ID + "&action=getConfig";
 String url2 = "https://raw.githubusercontent.com/phawitb/HT-Army2024/main/config_googlesheetAPi.txt";
 bool SEND_LINE = false;
 bool SEND_DATA = false;
+String message;
 
 WiFiUDP ntpUDP;
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 DHT dht(DHTPIN, DHTTYPE);
 WiFiManager wm;
 NTPClient timeClient(ntpUDP, "pool.ntp.org", offsetTime);
+WiFiClientSecure client;
 
 float stringToFloat(String str) {
   char charArray[str.length() + 1];
@@ -95,56 +82,47 @@ float stringToFloat(String str) {
   return atof(charArray);
 }
 
-String splitString(String str,String id) {
-  char charArray[str.length() + 1];  
-  str.toCharArray(charArray, sizeof(charArray));  
-  char* token = strtok(charArray, "\n");
-  while (token != NULL) {
-    String d = String(token[0])+String(token[1])+String(token[2])+String(token[3]);
-    if(d==id){
-      return token;
+void parseJsonString(String text) {
+    StaticJsonDocument<256> doc;
+    DeserializationError error = deserializeJson(doc, text);
+    if (error) {
+        Serial.print(F("deserializeJson() failed: "));
+        Serial.println(error.f_str());
+        return;
     }
-    token = strtok(NULL, "\n");
-    
-  }
-  return "None";
+    UNIT = doc["unit"].as<String>();
+    adjust_temp = doc["adj_temp"].as<float>();
+    adjust_humid = doc["adj_humid"].as<float>();
+    adjust_pm25 = doc["adj_pm25"].as<float>();
+    LINE_TOKEN1 = doc["line1"].as<String>();
+    LINE_TOKEN2 = doc["line2"].as<String>();
+    LINE_TOKEN3 = doc["line3"].as<String>();
+
 }
 
-void splitString2(String data) {
-  Serial.print("xxxx");
-  Serial.print(data);
-
-  String parts[7];
-
-  int index = 0;
-  while(data.length() > 0) {
-      int commaIndex = data.indexOf(',');
-      if(commaIndex >= 0) {
-          parts[index] = data.substring(0, commaIndex);
-          data = data.substring(commaIndex + 1);
-      } else {
-          parts[index] = data;
-          break;
-      }
-      index++;
-  }
-  for(int i = 0; i < 7; i++) {
-      Serial.println(parts[i]);
-  }
-
-  adjust_temp = stringToFloat(parts[1]);
-  adjust_humid = stringToFloat(parts[2]);
-  adjust_pm25 = stringToFloat(parts[3]);
-  LINE_TOKEN1 = parts[4];
-  LINE_TOKEN2 = parts[5];
-  UNIT = parts[6];
-  Serial.print("adjust_temp"); Serial.println(adjust_temp);
-  Serial.print("adjust_humid"); Serial.println(adjust_humid);
-  Serial.print("adjust_pm25"); Serial.println(adjust_pm25);
-  Serial.print("LINE_TOKEN1"); Serial.println(LINE_TOKEN1);
-  Serial.print("LINE_TOKEN2"); Serial.println(LINE_TOKEN2);
-  Serial.print("UNIT"); Serial.println(UNIT);
-
+void read_google_sheet(void) 
+{
+  std::unique_ptr<BearSSL::WiFiClientSecure>client(new BearSSL::WiFiClientSecure);
+  client->setInsecure();
+  HTTPClient https1;
+  // String url = "https://script.google.com/macros/s/AKfycbx1nHCA01C2U0NdpsnPdO0Oc5xEjLgfOZWIOwu1f0DX72OGHOHHBRdRqwZyNO-EENF1xg/exec?id=" + DEVICE_ID + "&action=getConfig";
+  Serial.println("Reading Data From Google Sheet.....");
+  https1.begin(*client, url1.c_str());
+  https1.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  int httpCode = https1.GET();
+  Serial.print("HTTP Status Code: ");
+  Serial.println(httpCode);
+  //-----------------------------------------------------------------------------------
+  if(httpCode <= 0){Serial.println("Error on HTTP request"); https1.end(); return;}
+  //-----------------------------------------------------------------------------------
+  //reading data comming from Google Sheet
+  String payload = https1.getString();
+  Serial.println("Payload: "+payload);
+  //-----------------------------------------------------------------------------------
+  if(httpCode == 200)
+  message= payload;
+  //-------------------------------------------------------------------------------------
+  https1.end();
 }
 
 int update_api(String DEVICE_ID,float temp,float humid,float hic,String flag){
@@ -328,24 +306,35 @@ void loop(){
     timeClient.begin();
 
     //GET CONFIG
-    std::unique_ptr<BearSSL::WiFiClientSecure>client(new BearSSL::WiFiClientSecure);
-    client->setInsecure();
-    //get config1 error and token===========================
-    HTTPClient https1;
-    Serial.println("Requesting " + url1);
-    if (https1.begin(*client, url1)) {
-      int httpCode1 = https1.GET();
-      String content1 = https1.getString();
-      Serial.println("===================================== Response code: " + String(httpCode1) + content1);
-      String b = splitString(content1,DEVICE_ID);   //"202306002");
-      Serial.println(b);
-      splitString2(b);
+    read_google_sheet();
+    parseJsonString(message);
 
-    }
+    Serial.print("UNIT: ");     Serial.println(UNIT);
+    Serial.print("adjust_temp: "); Serial.println(adjust_temp);
+    Serial.print("adjust_humid: "); Serial.println(adjust_humid);
+    Serial.print("adjust_pm25: "); Serial.println(adjust_pm25);
+    Serial.print("LINE_TOKEN1: "); Serial.println(LINE_TOKEN1);
+    Serial.print("LINE_TOKEN2: "); Serial.println(LINE_TOKEN2);
+    Serial.print("LINE_TOKEN3: "); Serial.println(LINE_TOKEN3);
+  
+    std::unique_ptr<BearSSL::WiFiClientSecure>client2(new BearSSL::WiFiClientSecure);
+    client2->setInsecure();
+    // //get config1 error and token===========================
+    // HTTPClient https1;
+    // Serial.println("Requesting " + url1);
+    // if (https1.begin(*client, url1)) {
+    //   int httpCode1 = https1.GET();
+    //   String content1 = https1.getString();
+    //   Serial.println("===================================== Response code: " + String(httpCode1) + content1);
+    //   String b = splitString(content1,DEVICE_ID);   //"202306002");
+    //   Serial.println(b);
+    //   splitString2(b);
+
+    // }
     //get config2 sheet api url from github ===========================
     HTTPClient https2;
     Serial.println("Requesting " + url2);
-    if (https2.begin(*client, url2)) {
+    if (https2.begin(*client2, url2)) {
       int httpCode2 = https2.GET();
       String content2 = https2.getString();
       Serial.println("xxxxxxxxxx Response code: xxxxxxxxx");
@@ -452,7 +441,7 @@ void loop(){
       msg += "●Flag: " + flag + "\n";
       msg += "●Temp: " + String(temp) + "°C\n";
       msg += "●Humidity: " + String(humid) + "%\n";
-      msg += "Heat index: " + String(hic) + "°C\n";
+      msg += "●Heat index: " + String(hic) + "°C\n";
       msg += "●Train/Rest: " + String(train) + "/" + String(rest) + " min.\n";
       msg += "●Water: " + String(water) + " L/hr\n";
             
